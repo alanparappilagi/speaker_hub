@@ -10,9 +10,10 @@ export default function SpeakerDetailPage() {
   const [speaker, setSpeaker] = useState<any>(null);
   const [portfolio, setPortfolio] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [inquiriesList, setInquiriesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Invite Form State
+  // Invite Form State (for Visitors)
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteDetails, setInviteDetails] = useState('');
@@ -43,10 +44,11 @@ export default function SpeakerDetailPage() {
 
   useEffect(() => {
     async function loadData() {
+      // 1. Get authenticated user
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      // Fetch Speaker Profile
+      // 2. Fetch Speaker Profile
       const { data: profileData, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
@@ -63,16 +65,32 @@ export default function SpeakerDetailPage() {
         setEditLinkedin(profileData.linkedin_url || '');
         setEditGithub(profileData.github_url || '');
         setEditAvatarUrl(profileData.avatar_url || '');
+
+        // 3. If the logged in user is the owner, fetch their inquiries inbox
+        if (user && user.id === profileData.user_id) {
+          const { data: inqData } = await supabase
+            .from('inquiries')
+            .select('*')
+            .eq('speaker_id', profileData.id)
+            .order('created_at', { ascending: false });
+
+          if (inqData) {
+            setInquiriesList(inqData);
+          }
+        }
       }
 
-      // Fetch Portfolio Items
+      // 4. Fetch Portfolio Items
       const { data: worksData } = await supabase
         .from('portfolio_items')
         .select('*')
         .eq('speaker_id', id)
         .order('created_at', { ascending: false });
 
-      if (worksData) setPortfolio(worksData);
+      if (worksData) {
+        setPortfolio(worksData);
+      }
+
       setLoading(false);
     }
 
@@ -81,7 +99,7 @@ export default function SpeakerDetailPage() {
 
   const isOwner = currentUser && speaker && currentUser.id === speaker.user_id;
 
-  // 1. Send Inquiry / Direct Mail Handler
+  // 1. Send Inquiry (Visitor Handler)
   const handleSendInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     setSendingInvite(true);
@@ -236,7 +254,7 @@ export default function SpeakerDetailPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Header Profile Card */}
       <div className="bg-white text-slate-900 rounded-2xl p-6 sm:p-8 shadow-xl mb-8 border border-slate-100">
         <div className="flex flex-col sm:flex-row items-start gap-6 justify-between">
@@ -324,7 +342,7 @@ export default function SpeakerDetailPage() {
         )}
       </div>
 
-      {/* Main Grid: Works (Left) + Invite Form (Right) */}
+      {/* Main Grid: Works (Left) + Inquiries / Invite Form (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Left Column: Previous Works & Sessions */}
@@ -387,66 +405,110 @@ export default function SpeakerDetailPage() {
           )}
         </div>
 
-        {/* Right Column: Direct Mail / Invite Form */}
+        {/* Right Column: Inquiries Inbox (for Owner) OR Contact Form (for Visitors) */}
         <div className="bg-white text-slate-900 rounded-2xl p-6 border border-slate-200 h-fit shadow-lg">
-          <h3 className="text-lg font-bold text-slate-900">Invite for a Session</h3>
-          <p className="text-xs text-slate-500 mb-4">Send a direct proposal or inquiry to {speaker.name}.</p>
+          {isOwner ? (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold text-slate-900">Received Inquiries</h3>
+                <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                  {inquiriesList.length}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mb-4">Direct invitation requests submitted by event organizers.</p>
 
-          {inviteSuccess ? (
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl text-xs space-y-2">
-              <p className="font-semibold">Inquiry sent successfully!</p>
-              <p>Your email client was triggered to open direct contact with {speaker.name}.</p>
-              <button
-                onClick={() => setInviteSuccess(false)}
-                className="text-emerald-700 underline font-medium block mt-2"
-              >
-                Send another message
-              </button>
+              {inquiriesList.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
+                  No inquiries received yet. When organizers invite you, their requests will appear here.
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                  {inquiriesList.map((inq) => (
+                    <div key={inq.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5 shadow-sm">
+                      <div className="flex items-center justify-between font-bold text-slate-900">
+                        <span>{inq.organizer_name}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          {new Date(inq.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <a
+                        href={`mailto:${inq.organizer_email}?subject=Re:%20Session%20Invitation`}
+                        className="text-blue-600 hover:underline inline-block text-[11px] font-medium"
+                      >
+                        ✉ {inq.organizer_email}
+                      </a>
+                      <p className="text-slate-700 text-xs pt-1.5 border-t border-slate-200 whitespace-pre-line leading-relaxed">
+                        {inq.session_details}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
-            <form onSubmit={handleSendInquiry} className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Your Name</label>
-                <input
-                  type="text"
-                  required
-                  value={inviteName}
-                  onChange={(e) => setInviteName(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                />
-              </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Invite for a Session</h3>
+              <p className="text-xs text-slate-500 mb-4">Send a direct proposal or inquiry to {speaker.name}.</p>
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Your Email</label>
-                <input
-                  type="email"
-                  required
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                />
-              </div>
+              {inviteSuccess ? (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl text-xs space-y-2">
+                  <p className="font-semibold">Inquiry sent successfully!</p>
+                  <p>Your message has been logged and your email client was opened to message {speaker.name}.</p>
+                  <button
+                    onClick={() => setInviteSuccess(false)}
+                    className="text-emerald-700 underline font-medium block mt-2"
+                  >
+                    Send another message
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSendInquiry} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Your Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={inviteName}
+                      onChange={(e) => setInviteName(e.target.value)}
+                      placeholder="e.g. Sarah Jenkins (TEDx Organizer)"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Session Details & Date</label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="Describe topic, event date, audience, and format (virtual/in-person)..."
-                  value={inviteDetails}
-                  onChange={(e) => setInviteDetails(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Your Email</label>
+                    <input
+                      type="email"
+                      required
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="sarah@tedxexample.com"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-              <button
-                type="submit"
-                disabled={sendingInvite}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg text-sm transition shadow-sm"
-              >
-                {sendingInvite ? 'Sending...' : '✈ Send Invitation'}
-              </button>
-            </form>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Session Details & Date</label>
+                    <textarea
+                      rows={4}
+                      required
+                      placeholder="Describe topic, event date, audience, and format (virtual/in-person)..."
+                      value={inviteDetails}
+                      onChange={(e) => setInviteDetails(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={sendingInvite}
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg text-sm transition shadow-sm"
+                  >
+                    {sendingInvite ? 'Sending...' : '✈ Send Invitation'}
+                  </button>
+                </form>
+              )}
+            </div>
           )}
         </div>
       </div>
