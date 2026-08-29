@@ -43,11 +43,10 @@ export default function SpeakerDetailPage() {
 
   useEffect(() => {
     async function loadData() {
-      // 1. Get authenticated user
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      // 2. Fetch Speaker Profile
+      // Fetch Speaker Profile
       const { data: profileData, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
@@ -65,7 +64,7 @@ export default function SpeakerDetailPage() {
         setEditGithub(profileData.github_url || '');
         setEditAvatarUrl(profileData.avatar_url || '');
 
-        // 3. If the logged in user is the owner, fetch their inquiries inbox
+        // Fetch inquiries inbox if owner
         if (user && user.id === profileData.user_id) {
           const { data: inqData } = await supabase
             .from('inquiries')
@@ -79,7 +78,7 @@ export default function SpeakerDetailPage() {
         }
       }
 
-      // 4. Fetch Portfolio Items
+      // Fetch Portfolio Items
       const { data: worksData } = await supabase
         .from('portfolio_items')
         .select('*')
@@ -98,7 +97,21 @@ export default function SpeakerDetailPage() {
 
   const isOwner = currentUser && speaker && currentUser.id === speaker.user_id;
 
-  // 1. Send Inquiry via Resend API
+  // 1. Update Inquiry Status (Accept / Decline / Archive)
+  const handleUpdateInquiryStatus = async (inquiryId: string, newStatus: string) => {
+    const { error } = await supabase
+      .from('inquiries')
+      .update({ status: newStatus })
+      .eq('id', inquiryId);
+
+    if (!error) {
+      setInquiriesList((prev) =>
+        prev.map((item) => (item.id === inquiryId ? { ...item, status: newStatus } : item))
+      );
+    }
+  };
+
+  // 2. Send Inquiry via Resend API (Visitor Handler)
   const handleSendInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -106,17 +119,16 @@ export default function SpeakerDetailPage() {
 
     const senderEmail = currentUser.email;
 
-    // Save record to Supabase Inquiries table
     await supabase.from('inquiries').insert([
       {
         speaker_id: speaker.id,
         organizer_name: inviteName,
         organizer_email: senderEmail,
         session_details: inviteDetails,
+        status: 'pending',
       },
     ]);
 
-    // Trigger automated backend email via API route
     try {
       const res = await fetch('/api/send-inquiry', {
         method: 'POST',
@@ -143,7 +155,7 @@ export default function SpeakerDetailPage() {
     setInviteDetails('');
   };
 
-  // 2. Avatar Photo Upload Handler
+  // 3. Avatar Photo Upload Handler
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -163,7 +175,7 @@ export default function SpeakerDetailPage() {
     setUploadingAvatar(false);
   };
 
-  // 3. Save Edited Profile Details
+  // 4. Save Edited Profile Details
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingProfile(true);
@@ -196,7 +208,7 @@ export default function SpeakerDetailPage() {
     setSavingProfile(false);
   };
 
-  // 4. Upload New Portfolio Item
+  // 5. Upload New Portfolio Item
   const handleUploadWork = async (e: React.FormEvent) => {
     e.preventDefault();
     setUploadingWork(true);
@@ -242,7 +254,7 @@ export default function SpeakerDetailPage() {
     setUploadingWork(false);
   };
 
-  // 5. Delete Portfolio Item
+  // 6. Delete Portfolio Item
   const handleDeleteWork = async (workId: string) => {
     if (!confirm('Are you sure you want to remove this portfolio entry?')) return;
     const { error } = await supabase.from('portfolio_items').delete().eq('id', workId);
@@ -418,13 +430,13 @@ export default function SpeakerDetailPage() {
           )}
         </div>
 
-        {/* Right Column: Inquiries Inbox (for Owner) OR Contact Form (for Visitors) */}
+        {/* Right Column: Inquiries Inbox with Status Actions (Owner) OR Contact Form (Visitor) */}
         <div className="bg-white text-slate-900 rounded-2xl p-6 border border-slate-200 h-fit shadow-lg">
           {isOwner ? (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-bold text-slate-900">Received Inquiries</h3>
-                <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2.5 py-0.5 rounded-full">
                   {inquiriesList.length}
                 </span>
               </div>
@@ -435,26 +447,68 @@ export default function SpeakerDetailPage() {
                   No inquiries received yet.
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-                  {inquiriesList.map((inq) => (
-                    <div key={inq.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5 shadow-sm">
-                      <div className="flex items-center justify-between font-bold text-slate-900">
-                        <span>{inq.organizer_name}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">
-                          {new Date(inq.created_at).toLocaleDateString()}
-                        </span>
+                <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+                  {inquiriesList.map((inq) => {
+                    const status = inq.status || 'pending';
+                    return (
+                      <div key={inq.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900 text-sm">{inq.organizer_name}</span>
+                          <span
+                            className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+                              status === 'accepted'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : status === 'declined'
+                                ? 'bg-red-100 text-red-800 border-red-200'
+                                : 'bg-amber-100 text-amber-800 border-amber-200'
+                            }`}
+                          >
+                            {status}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <a
+                            href={`mailto:${inq.organizer_email}?subject=Re:%20Session%20Invitation`}
+                            className="text-blue-600 hover:underline font-medium"
+                          >
+                            ✉ {inq.organizer_email}
+                          </a>
+                          <span>{new Date(inq.created_at).toLocaleDateString()}</span>
+                        </div>
+
+                        <p className="text-slate-700 text-xs pt-1.5 border-t border-slate-200 whitespace-pre-line leading-relaxed">
+                          {inq.session_details}
+                        </p>
+
+                        {/* Status Change Buttons */}
+                        <div className="pt-2 border-t border-slate-200 flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleUpdateInquiryStatus(inq.id, 'accepted')}
+                            disabled={status === 'accepted'}
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${
+                              status === 'accepted'
+                                ? 'bg-emerald-600 text-white cursor-default'
+                                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                            }`}
+                          >
+                            ✓ Accept
+                          </button>
+                          <button
+                            onClick={() => handleUpdateInquiryStatus(inq.id, 'declined')}
+                            disabled={status === 'declined'}
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${
+                              status === 'declined'
+                                ? 'bg-red-600 text-white cursor-default'
+                                : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                            }`}
+                          >
+                            ✕ Decline
+                          </button>
+                        </div>
                       </div>
-                      <a
-                        href={`mailto:${inq.organizer_email}?subject=Re:%20Session%20Invitation`}
-                        className="text-blue-600 hover:underline inline-block text-[11px] font-medium"
-                      >
-                        ✉ {inq.organizer_email}
-                      </a>
-                      <p className="text-slate-700 text-xs pt-1.5 border-t border-slate-200 whitespace-pre-line leading-relaxed">
-                        {inq.session_details}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
