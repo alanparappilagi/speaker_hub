@@ -1,200 +1,180 @@
 'use client';
-import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function JoinPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    full_name: '',
-    headline: '',
-    bio: '',
-    district: '',
-    state: '',
-    country: '',
-    contact_email: '',
-    topics: '',
-    languages: '',
-    github_url: '',
-    linkedin_url: '',
-    available_for_pro_bono: true,
-  });
+
+  const [name, setName] = useState('');
+  const [headline, setHeadline] = useState('');
+  const [bio, setBio] = useState('');
+  const [country, setCountry] = useState('United States');
+  const [proBono, setProBono] = useState(false);
+
   const [loading, setLoading] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
+  // Check if the user is logged in on mount
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+      } else {
+        setUser(user);
+      }
+      setAuthChecking(false);
+    }
+    checkAuth();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const payload = {
-      ...formData,
-      topics: formData.topics.split(',').map((t) => t.trim()).filter(Boolean),
-      languages: formData.languages.split(',').map((l) => l.trim()).filter(Boolean),
-    };
+    // 1. Verify user session
+    const { data: { user } } = await supabase.auth.getUser();
 
-    const { data, error } = await supabase.from('profiles').insert([payload]).select().single();
+    if (!user) {
+      alert('Please sign in or create an account first to publish a profile.');
+      router.push('/login');
+      return;
+    }
 
-    setLoading(false);
+    // 2. Insert profile linked to this authenticated user
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          name,
+          headline,
+          bio,
+          country,
+          pro_bono: proBono,
+          user_id: user.id, // Links ownership to Supabase Auth user
+        },
+      ])
+      .select()
+      .single();
+
     if (error) {
       alert('Error creating profile: ' + error.message);
+      setLoading(false);
     } else {
       router.push(`/speakers/${data.id}`);
     }
   };
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-400 flex items-center justify-center">
+        Checking authentication...
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-2xl mx-auto py-10 px-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Join as a Resource Person</h1>
-      <p className="text-gray-600 mb-6">Create your open profile so organizers worldwide can discover and contact you.</p>
-
-      <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 border rounded-xl shadow-sm">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Full Name *</label>
-          <input
-            required
-            type="text"
-            className="w-full mt-1 p-2 border rounded-md"
-            value={formData.full_name}
-            onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-          />
+    <div className="min-h-screen bg-slate-950 text-slate-100 py-12 px-4">
+      <div className="max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-xl">
+        <div className="mb-6">
+          <Link href="/" className="text-xs text-slate-400 hover:text-white transition">
+            ← Back to Directory
+          </Link>
+          <h1 className="text-2xl font-bold mt-2">Create Speaker Profile</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Publish your details so event organizers and communities can reach you.
+          </p>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Headline / Role *</label>
-          <input
-            required
-            type="text"
-            placeholder="e.g. Senior Cloud Architect & Speaker"
-            className="w-full mt-1 p-2 border rounded-md"
-            value={formData.headline}
-            onChange={(e) => setFormData({ ...formData, headline: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Contact Email *</label>
-          <input
-            required
-            type="email"
-            className="w-full mt-1 p-2 border rounded-md"
-            value={formData.contact_email}
-            onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-          />
-        </div>
-
-        {/* Granular Location: District, State, Country */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700">District / City *</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Full Name *
+            </label>
             <input
-              required
               type="text"
-              placeholder="e.g. Austin, Munich, Thrissur"
-              className="w-full mt-1 p-2 border rounded-md"
-              value={formData.district}
-              onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">State / Region *</label>
-            <input
               required
-              type="text"
-              placeholder="e.g. Texas, Bavaria, Kerala"
-              className="w-full mt-1 p-2 border rounded-md"
-              value={formData.state}
-              onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
+              placeholder="e.g. Sarah Connor"
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700">Country *</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Headline / Role *
+            </label>
             <input
+              type="text"
               required
-              type="text"
-              placeholder="e.g. USA, Germany, India"
-              className="w-full mt-1 p-2 border rounded-md"
-              value={formData.country}
-              onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+              value={headline}
+              onChange={(e) => setHeadline(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
+              placeholder="e.g. AI Researcher & Keynote Speaker"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Topics / Expertise (comma-separated)</label>
-          <input
-            type="text"
-            placeholder="e.g. Machine Learning, Cloud Systems, Open Science"
-            className="w-full mt-1 p-2 border rounded-md"
-            value={formData.topics}
-            onChange={(e) => setFormData({ ...formData, topics: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Languages Spoken (comma-separated)</label>
-          <input
-            type="text"
-            placeholder="e.g. English, Spanish, Malayalam, German"
-            className="w-full mt-1 p-2 border rounded-md"
-            value={formData.languages}
-            onChange={(e) => setFormData({ ...formData, languages: e.target.value })}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">LinkedIn URL</label>
-            <input
-              type="url"
-              placeholder="https://linkedin.com/in/..."
-              className="w-full mt-1 p-2 border rounded-md"
-              value={formData.linkedin_url}
-              onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })}
-            />
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Country *
+            </label>
+            <select
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
+            >
+              <option value="India">India</option>
+              <option value="United States">United States</option>
+              <option value="United Kingdom">United Kingdom</option>
+              <option value="Canada">Canada</option>
+              <option value="Germany">Germany</option>
+              <option value="Singapore">Singapore</option>
+              <option value="Australia">Australia</option>
+              <option value="Other">Other</option>
+            </select>
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700">GitHub / Personal Website</label>
-            <input
-              type="url"
-              placeholder="https://github.com/..."
-              className="w-full mt-1 p-2 border rounded-md"
-              value={formData.github_url}
-              onChange={(e) => setFormData({ ...formData, github_url: e.target.value })}
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Bio / Topics Covered *
+            </label>
+            <textarea
+              required
+              rows={4}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
+              placeholder="Share your speaking experience, primary domains, and preferred conference formats..."
             />
           </div>
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Bio / About You</label>
-          <textarea
-            rows={4}
-            placeholder="Brief summary of your background, research interests, and past speaking experience..."
-            className="w-full mt-1 p-2 border rounded-md"
-            value={formData.bio}
-            onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-          />
-        </div>
+          <div className="flex items-center gap-3 pt-2">
+            <input
+              type="checkbox"
+              id="proBono"
+              checked={proBono}
+              onChange={(e) => setProBono(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="proBono" className="text-sm text-slate-300 cursor-pointer">
+              Available for pro-bono / community / college sessions
+            </label>
+          </div>
 
-        <div className="flex items-center gap-2 pt-2">
-          <input
-            type="checkbox"
-            id="pro_bono"
-            checked={formData.available_for_pro_bono}
-            onChange={(e) => setFormData({ ...formData, available_for_pro_bono: e.target.checked })}
-            className="h-4 w-4 text-indigo-600 rounded"
-          />
-          <label htmlFor="pro_bono" className="text-sm text-gray-700">
-            Available for free / pro-bono sessions (academic institutions, student clubs, non-profits)
-          </label>
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-md transition mt-4"
-        >
-          {loading ? 'Creating Profile...' : 'Save Profile'}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 mt-4"
+          >
+            {loading ? 'Creating Profile...' : 'Save & Continue to Portfolio'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
