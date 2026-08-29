@@ -15,7 +15,6 @@ export default function SpeakerDetailPage() {
 
   // Invite Form State (for Visitors)
   const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
   const [inviteDetails, setInviteDetails] = useState('');
   const [sendingInvite, setSendingInvite] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState(false);
@@ -102,14 +101,17 @@ export default function SpeakerDetailPage() {
   // 1. Send Inquiry (Visitor Handler)
   const handleSendInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return;
     setSendingInvite(true);
+
+    const senderEmail = currentUser.email;
 
     // Save record to Supabase
     await supabase.from('inquiries').insert([
       {
         speaker_id: speaker.id,
         organizer_name: inviteName,
-        organizer_email: inviteEmail,
+        organizer_email: senderEmail,
         session_details: inviteDetails,
       },
     ]);
@@ -118,7 +120,7 @@ export default function SpeakerDetailPage() {
     const targetEmail = speaker.contact_email || 'speaker@example.com';
     const subject = encodeURIComponent(`Session Invitation for ${speaker.name} via SpeakerHub`);
     const body = encodeURIComponent(
-      `Hello ${speaker.name},\n\nMy name is ${inviteName} (${inviteEmail}).\n\nSession Details & Proposal:\n${inviteDetails}\n\nLooking forward to hearing from you!`
+      `Hello ${speaker.name},\n\nMy name is ${inviteName} (${senderEmail}).\n\nSession Details & Proposal:\n${inviteDetails}\n\nLooking forward to hearing from you!`
     );
 
     window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
@@ -126,7 +128,6 @@ export default function SpeakerDetailPage() {
     setSendingInvite(false);
     setInviteSuccess(true);
     setInviteName('');
-    setInviteEmail('');
     setInviteDetails('');
   };
 
@@ -419,7 +420,7 @@ export default function SpeakerDetailPage() {
 
               {inquiriesList.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
-                  No inquiries received yet. When organizers invite you, their requests will appear here.
+                  No inquiries received yet.
                 </div>
               ) : (
                 <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
@@ -450,10 +451,22 @@ export default function SpeakerDetailPage() {
               <h3 className="text-lg font-bold text-slate-900">Invite for a Session</h3>
               <p className="text-xs text-slate-500 mb-4">Send a direct proposal or inquiry to {speaker.name}.</p>
 
-              {inviteSuccess ? (
+              {!currentUser ? (
+                <div className="text-center py-6 border border-dashed border-slate-300 rounded-xl p-4 bg-slate-50">
+                  <p className="text-xs text-slate-600 mb-3 font-medium">
+                    Please sign in to send an inquiry with a verified organizer email.
+                  </p>
+                  <Link
+                    href="/login"
+                    className="inline-block bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition"
+                  >
+                    Sign In to Continue
+                  </Link>
+                </div>
+              ) : inviteSuccess ? (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl text-xs space-y-2">
                   <p className="font-semibold">Inquiry sent successfully!</p>
-                  <p>Your message has been logged and your email client was opened to message {speaker.name}.</p>
+                  <p>Your message has been sent directly to {speaker.name}.</p>
                   <button
                     onClick={() => setInviteSuccess(false)}
                     className="text-emerald-700 underline font-medium block mt-2"
@@ -476,14 +489,12 @@ export default function SpeakerDetailPage() {
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Your Email</label>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Verified Sender Email</label>
                     <input
                       type="email"
-                      required
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="sarah@tedxexample.com"
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                      disabled
+                      value={currentUser.email}
+                      className="w-full border border-slate-200 bg-slate-100 rounded-lg px-3 py-2 text-sm text-slate-500 cursor-not-allowed outline-none"
                     />
                   </div>
 
