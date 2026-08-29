@@ -97,7 +97,7 @@ export default function SpeakerDetailPage() {
 
   const isOwner = currentUser && speaker && currentUser.id === speaker.user_id;
 
-  // 1. Update Inquiry Status (Accept / Decline / Archive)
+  // 1. Update Inquiry Status (Accept / Decline)
   const handleUpdateInquiryStatus = async (inquiryId: string, newStatus: string) => {
     const { error } = await supabase
       .from('inquiries')
@@ -367,7 +367,7 @@ export default function SpeakerDetailPage() {
         )}
       </div>
 
-      {/* Main Grid: Works (Left) + Inquiries / Invite Form (Right) */}
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Left Column: Previous Works & Sessions */}
@@ -481,7 +481,7 @@ export default function SpeakerDetailPage() {
                           {inq.session_details}
                         </p>
 
-                        {/* Status Change Buttons */}
+                        {/* Status Change Action Buttons */}
                         <div className="pt-2 border-t border-slate-200 flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleUpdateInquiryStatus(inq.id, 'accepted')}
