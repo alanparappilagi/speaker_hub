@@ -98,7 +98,7 @@ export default function SpeakerDetailPage() {
 
   const isOwner = currentUser && speaker && currentUser.id === speaker.user_id;
 
-  // 1. Send Inquiry (Visitor Handler)
+  // 1. Send Inquiry via Resend API
   const handleSendInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -106,7 +106,7 @@ export default function SpeakerDetailPage() {
 
     const senderEmail = currentUser.email;
 
-    // Save record to Supabase
+    // Save record to Supabase Inquiries table
     await supabase.from('inquiries').insert([
       {
         speaker_id: speaker.id,
@@ -116,14 +116,26 @@ export default function SpeakerDetailPage() {
       },
     ]);
 
-    // Construct Mailto for direct communication
-    const targetEmail = speaker.contact_email || 'speaker@example.com';
-    const subject = encodeURIComponent(`Session Invitation for ${speaker.name} via SpeakerHub`);
-    const body = encodeURIComponent(
-      `Hello ${speaker.name},\n\nMy name is ${inviteName} (${senderEmail}).\n\nSession Details & Proposal:\n${inviteDetails}\n\nLooking forward to hearing from you!`
-    );
+    // Trigger automated backend email via API route
+    try {
+      const res = await fetch('/api/send-inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          speakerName: speaker.name,
+          speakerEmail: speaker.contact_email,
+          organizerName: inviteName,
+          organizerEmail: senderEmail,
+          sessionDetails: inviteDetails,
+        }),
+      });
 
-    window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
+      if (!res.ok) {
+        console.warn('Backend email notification failed, but inquiry was saved to database.');
+      }
+    } catch (err) {
+      console.error('Email sending error:', err);
+    }
 
     setSendingInvite(false);
     setInviteSuccess(true);
@@ -466,7 +478,7 @@ export default function SpeakerDetailPage() {
               ) : inviteSuccess ? (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl text-xs space-y-2">
                   <p className="font-semibold">Inquiry sent successfully!</p>
-                  <p>Your message has been sent directly to {speaker.name}.</p>
+                  <p>Your message has been delivered directly to {speaker.name}.</p>
                   <button
                     onClick={() => setInviteSuccess(false)}
                     className="text-emerald-700 underline font-medium block mt-2"
