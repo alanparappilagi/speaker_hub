@@ -6,12 +6,12 @@ import { supabase } from '@/lib/supabase';
 
 interface SpeakerProfile {
   id: string;
-  full_name: string;
-  title: string;
-  bio: string;
-  location: string;
-  pro_bono: boolean;
-  topics: string[];
+  full_name?: string;
+  title?: string;
+  bio?: string;
+  location?: string;
+  pro_bono?: boolean;
+  topics?: string[];
   avatar_url?: string;
 }
 
@@ -25,35 +25,43 @@ export default function HomePage() {
   useEffect(() => {
     async function fetchSpeakers() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, title, bio, location, pro_bono, topics, avatar_url')
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, title, bio, location, pro_bono, topics, avatar_url')
+          .order('created_at', { ascending: false });
 
-      if (data && !error) {
-        setSpeakers(data);
+        if (data && !error) {
+          setSpeakers(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch speakers:', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     fetchSpeakers();
   }, []);
 
-  // Collect all unique topics across speakers
   const allTopics = ['All', ...Array.from(new Set(speakers.flatMap((s) => s.topics || [])))];
 
-  // Filter speakers based on search query, selected topic, and pro-bono status
   const filteredSpeakers = speakers.filter((speaker) => {
+    const name = speaker.full_name || '';
+    const title = speaker.title || '';
+    const bio = speaker.bio || '';
+    const location = speaker.location || '';
+
     const matchesSearch =
-      speaker.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      speaker.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      speaker.bio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      speaker.location?.toLowerCase().includes(searchTerm.toLowerCase());
+      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      bio.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      location.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesTopic =
       selectedTopic === 'All' || (speaker.topics && speaker.topics.includes(selectedTopic));
 
-    const matchesProBono = proBonoOnly ? speaker.pro_bono : true;
+    const matchesProBono = proBonoOnly ? Boolean(speaker.pro_bono) : true;
 
     return matchesSearch && matchesTopic && matchesProBono;
   });
@@ -148,71 +156,76 @@ export default function HomePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredSpeakers.map((speaker) => (
-            <Link
-              key={speaker.id}
-              href={`/speakers/${speaker.id}`}
-              className="group bg-slate-900/50 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/40 transition-all rounded-2xl p-6 flex flex-col justify-between shadow-sm hover:shadow-xl hover:shadow-blue-500/5"
-            >
-              <div>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    {speaker.avatar_url ? (
-                      <img
-                        src={speaker.avatar_url}
-                        alt={speaker.full_name}
-                        className="w-12 h-12 rounded-full object-cover border border-slate-700"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-base">
-                        {speaker.full_name.charAt(0)}
+          {filteredSpeakers.map((speaker) => {
+            const displayName = speaker.full_name || 'Anonymous Speaker';
+            const initial = displayName.charAt(0).toUpperCase() || 'S';
+
+            return (
+              <Link
+                key={speaker.id}
+                href={`/speakers/${speaker.id}`}
+                className="group bg-slate-900/50 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/40 transition-all rounded-2xl p-6 flex flex-col justify-between shadow-sm hover:shadow-xl hover:shadow-blue-500/5"
+              >
+                <div>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      {speaker.avatar_url ? (
+                        <img
+                          src={speaker.avatar_url}
+                          alt={displayName}
+                          className="w-12 h-12 rounded-full object-cover border border-slate-700"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-base">
+                          {initial}
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="font-bold text-white group-hover:text-blue-400 transition text-base">
+                          {displayName}
+                        </h3>
+                        <p className="text-xs text-slate-400 line-clamp-1">{speaker.title || 'Speaker'}</p>
                       </div>
-                    )}
-                    <div>
-                      <h3 className="font-bold text-white group-hover:text-blue-400 transition text-base">
-                        {speaker.full_name}
-                      </h3>
-                      <p className="text-xs text-slate-400 line-clamp-1">{speaker.title}</p>
                     </div>
+                    {speaker.pro_bono && (
+                      <span className="text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
+                        Pro-Bono
+                      </span>
+                    )}
                   </div>
-                  {speaker.pro_bono && (
-                    <span className="text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
-                      Pro-Bono
-                    </span>
+
+                  <p className="text-xs text-slate-300 line-clamp-3 mb-4 leading-relaxed">
+                    {speaker.bio || 'No bio provided.'}
+                  </p>
+
+                  {speaker.topics && speaker.topics.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {speaker.topics.slice(0, 3).map((topic, i) => (
+                        <span
+                          key={i}
+                          className="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-400 border border-slate-800 rounded-md"
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                      {speaker.topics.length > 3 && (
+                        <span className="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-500 border border-slate-800 rounded-md">
+                          +{speaker.topics.length - 3}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
-                <p className="text-xs text-slate-300 line-clamp-3 mb-4 leading-relaxed">
-                  {speaker.bio}
-                </p>
-
-                {speaker.topics && speaker.topics.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {speaker.topics.slice(0, 3).map((topic, i) => (
-                      <span
-                        key={i}
-                        className="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-400 border border-slate-800 rounded-md"
-                      >
-                        {topic}
-                      </span>
-                    ))}
-                    {speaker.topics.length > 3 && (
-                      <span className="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-500 border border-slate-800 rounded-md">
-                        +{speaker.topics.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs text-slate-400">
-                <span>📍 {speaker.location || 'Remote'}</span>
-                <span className="text-blue-400 group-hover:translate-x-0.5 transition font-medium">
-                  View Profile →
-                </span>
-              </div>
-            </Link>
-          ))}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs text-slate-400">
+                  <span>📍 {speaker.location || 'Remote'}</span>
+                  <span className="text-blue-400 group-hover:translate-x-0.5 transition font-medium">
+                    View Profile →
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
