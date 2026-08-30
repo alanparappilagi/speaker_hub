@@ -1,245 +1,217 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
-export const dynamic = 'force-dynamic';
+interface SpeakerProfile {
+  id: string;
+  full_name: string;
+  title: string;
+  bio: string;
+  location: string;
+  pro_bono: boolean;
+  topics: string[];
+  avatar_url?: string;
+}
 
 export default function HomePage() {
-  const [speakers, setSpeakers] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
+  const [speakers, setSpeakers] = useState<SpeakerProfile[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedTopic, setSelectedTopic] = useState<string>('All');
-  const [selectedCountry, setSelectedCountry] = useState('All');
   const [proBonoOnly, setProBonoOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchSpeakers = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setSpeakers(data);
-    }
-    setLoading(false);
-  };
-
   useEffect(() => {
+    async function fetchSpeakers() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, title, bio, location, pro_bono, topics, avatar_url')
+        .order('created_at', { ascending: false });
+
+      if (data && !error) {
+        setSpeakers(data);
+      }
+      setLoading(false);
+    }
+
     fetchSpeakers();
   }, []);
 
-  // Collect all unique topics from speakers
-  const allUniqueTopics = useMemo(() => {
-    const topicsSet = new Set<string>();
-    speakers.forEach((s) => {
-      if (Array.isArray(s.topics)) {
-        s.topics.forEach((topic: string) => {
-          if (topic.trim()) topicsSet.add(topic.trim());
-        });
-      }
-    });
-    return Array.from(topicsSet);
-  }, [speakers]);
+  // Collect all unique topics across speakers
+  const allTopics = ['All', ...Array.from(new Set(speakers.flatMap((s) => s.topics || [])))];
 
-  // Extract unique countries
-  const allUniqueCountries = useMemo(() => {
-    const countrySet = new Set<string>();
-    speakers.forEach((s) => {
-      if (s.country?.trim()) countrySet.add(s.country.trim());
-    });
-    return Array.from(countrySet);
-  }, [speakers]);
-
-  const filteredSpeakers = speakers.filter((s) => {
+  // Filter speakers based on search query, selected topic, and pro-bono status
+  const filteredSpeakers = speakers.filter((speaker) => {
     const matchesSearch =
-      (s.name?.toLowerCase().includes(search.toLowerCase()) ?? false) ||
-      (s.headline?.toLowerCase().includes(search.toLowerCase()) ?? false) ||
-      (s.bio?.toLowerCase().includes(search.toLowerCase()) ?? false);
+      speaker.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      speaker.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      speaker.bio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      speaker.location?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesCountry = selectedCountry === 'All' || s.country === selectedCountry;
-    const matchesProBono = !proBonoOnly || s.pro_bono === true;
     const matchesTopic =
-      selectedTopic === 'All' ||
-      (Array.isArray(s.topics) && s.topics.some((t: string) => t.toLowerCase() === selectedTopic.toLowerCase()));
+      selectedTopic === 'All' || (speaker.topics && speaker.topics.includes(selectedTopic));
 
-    return matchesSearch && matchesCountry && matchesProBono && matchesTopic;
+    const matchesProBono = proBonoOnly ? speaker.pro_bono : true;
+
+    return matchesSearch && matchesTopic && matchesProBono;
   });
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       {/* Hero Header */}
-      <div className="text-center mb-10">
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight mb-3">
-          Find Resource Persons & Speakers
-        </h1>
-        <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
-          An open directory connecting conference organizers, universities, and communities with verified domain experts, keynote speakers, and mentors.
-        </p>
-      </div>
-
-      {/* Search & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl mb-6 flex flex-wrap gap-3 items-center">
-        <input
-          type="text"
-          placeholder="Search by name, title, or keywords..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[260px] bg-slate-950 border border-slate-800 px-4 py-2.5 text-sm rounded-xl text-white outline-none focus:border-blue-500 transition"
-        />
-
-        <select
-          value={selectedCountry}
-          onChange={(e) => setSelectedCountry(e.target.value)}
-          className="bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-sm rounded-xl text-slate-300 outline-none focus:border-blue-500 cursor-pointer"
-        >
-          <option value="All">All Locations</option>
-          {allUniqueCountries.map((country) => (
-            <option key={country} value={country}>
-              {country}
-            </option>
-          ))}
-        </select>
-
-        <label className="flex items-center gap-2 text-xs font-medium text-slate-300 px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
-          <input
-            type="checkbox"
-            checked={proBonoOnly}
-            onChange={(e) => setProBonoOnly(e.target.checked)}
-            className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0"
-          />
-          Pro-Bono Only
-        </label>
-      </div>
-
-      {/* Topic Tag Filter Pills */}
-      {allUniqueTopics.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-8">
-          <span className="text-xs font-semibold text-slate-400 mr-1">Filter by Domain:</span>
-          <button
-            onClick={() => setSelectedTopic('All')}
-            className={`text-xs px-3 py-1 rounded-full font-medium transition ${
-              selectedTopic === 'All'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white hover:border-slate-700'
-            }`}
-          >
-            All Topics
-          </button>
-          {allUniqueTopics.map((topic) => (
-            <button
-              key={topic}
-              onClick={() => setSelectedTopic(selectedTopic === topic ? 'All' : topic)}
-              className={`text-xs px-3 py-1 rounded-full font-medium transition ${
-                selectedTopic === topic
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white hover:border-slate-700'
-              }`}
-            >
-              #{topic}
-            </button>
-          ))}
+      <div className="text-center max-w-3xl mx-auto mb-12">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium mb-4">
+          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+          Open Resource Person & Speaker Network
         </div>
-      )}
+        <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight mb-4 leading-tight">
+          Connect with Verified Domain Experts & Speakers
+        </h1>
+        <p className="text-base text-slate-400 mb-8 leading-relaxed">
+          Discover top mentors, keynote speakers, and industry professionals for your next conference, technical workshop, or university symposium.
+        </p>
 
-      {/* Speaker Cards Grid */}
-      {loading ? (
-        <div className="text-center text-slate-500 py-20 font-medium">Loading speaker directory...</div>
-      ) : filteredSpeakers.length === 0 ? (
-        <div className="text-center text-slate-400 py-16 bg-slate-900/50 border border-slate-800 rounded-2xl p-8">
-          <p className="font-semibold text-white mb-1">No speakers found</p>
-          <p className="text-xs text-slate-500 mb-4">Try adjusting your filters or search keywords.</p>
-          <button
-            onClick={() => {
-              setSearch('');
-              setSelectedTopic('All');
-              setSelectedCountry('All');
-              setProBonoOnly(false);
-            }}
-            className="text-xs text-blue-400 hover:underline"
+        {/* Action Buttons */}
+        <div className="flex items-center justify-center gap-4">
+          <Link
+            href="/join"
+            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition shadow-lg shadow-blue-600/20 text-sm"
           >
-            Reset all filters
-          </button>
+            Create Speaker Profile Now →
+          </Link>
+          <Link
+            href="/login"
+            className="bg-slate-900 hover:bg-slate-800 text-slate-300 font-medium px-6 py-3 rounded-xl transition border border-slate-800 text-sm"
+          >
+            Sign In
+          </Link>
+        </div>
+      </div>
+
+      {/* Search & Topic Filters */}
+      <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-sm p-4 sm:p-6 rounded-2xl mb-10 shadow-lg">
+        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search by name, role, domain, or location..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl">
+            <input
+              type="checkbox"
+              id="proBonoFilter"
+              checked={proBonoOnly}
+              onChange={(e) => setProBonoOnly(e.target.checked)}
+              className="rounded bg-slate-900 border-slate-800 text-blue-600 focus:ring-0 w-4 h-4 cursor-pointer"
+            />
+            <label htmlFor="proBonoFilter" className="text-xs text-slate-300 select-none cursor-pointer">
+              Pro-Bono Only
+            </label>
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        {allTopics.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60">
+            <span className="text-xs text-slate-500 mr-1 font-medium">Filter by topic:</span>
+            {allTopics.map((topic) => (
+              <button
+                key={topic}
+                onClick={() => setSelectedTopic(topic)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                  selectedTopic === topic
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                {topic}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Speakers Directory Grid */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : filteredSpeakers.length === 0 ? (
+        <div className="text-center py-20 border border-dashed border-slate-800 rounded-2xl">
+          <p className="text-slate-400 text-sm">No speakers found matching your criteria.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredSpeakers.map((speaker) => (
-            <div
+            <Link
               key={speaker.id}
-              className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 transition flex flex-col justify-between shadow-lg"
+              href={`/speakers/${speaker.id}`}
+              className="group bg-slate-900/50 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/40 transition-all rounded-2xl p-6 flex flex-col justify-between shadow-sm hover:shadow-xl hover:shadow-blue-500/5"
             >
               <div>
-                {/* Speaker Header */}
-                <div className="flex items-start gap-4 mb-4">
-                  {speaker.avatar_url ? (
-                    <img
-                      src={speaker.avatar_url}
-                      alt={speaker.name}
-                      className="w-14 h-14 rounded-full object-cover border border-slate-700 flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center font-bold text-lg border border-slate-700 flex-shrink-0">
-                      {speaker.name?.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <h3 className="text-base font-bold text-white truncate">{speaker.name}</h3>
-                      {speaker.pro_bono && (
-                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
-                          Pro-Bono
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-blue-400 text-xs font-medium line-clamp-1 mt-0.5">{speaker.headline}</p>
-                    {speaker.country && (
-                      <p className="text-slate-400 text-[11px] mt-0.5">📍 {speaker.country}</p>
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    {speaker.avatar_url ? (
+                      <img
+                        src={speaker.avatar_url}
+                        alt={speaker.full_name}
+                        className="w-12 h-12 rounded-full object-cover border border-slate-700"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-base">
+                        {speaker.full_name.charAt(0)}
+                      </div>
                     )}
+                    <div>
+                      <h3 className="font-bold text-white group-hover:text-blue-400 transition text-base">
+                        {speaker.full_name}
+                      </h3>
+                      <p className="text-xs text-slate-400 line-clamp-1">{speaker.title}</p>
+                    </div>
                   </div>
+                  {speaker.pro_bono && (
+                    <span className="text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
+                      Pro-Bono
+                    </span>
+                  )}
                 </div>
 
-                {/* Bio Snippet */}
-                {speaker.bio && (
-                  <p className="text-slate-400 text-xs line-clamp-3 mb-4 leading-relaxed bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
-                    {speaker.bio}
-                  </p>
-                )}
+                <p className="text-xs text-slate-300 line-clamp-3 mb-4 leading-relaxed">
+                  {speaker.bio}
+                </p>
 
-                {/* Domain Badges */}
-                {Array.isArray(speaker.topics) && speaker.topics.length > 0 && (
+                {speaker.topics && speaker.topics.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-4">
-                    {speaker.topics.slice(0, 3).map((topic: string, idx: number) => (
-                      <button
-                        key={idx}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setSelectedTopic(topic);
-                        }}
-                        className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded-md transition"
+                    {speaker.topics.slice(0, 3).map((topic, i) => (
+                      <span
+                        key={i}
+                        className="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-400 border border-slate-800 rounded-md"
                       >
-                        #{topic}
-                      </button>
+                        {topic}
+                      </span>
                     ))}
                     {speaker.topics.length > 3 && (
-                      <span className="text-[10px] text-slate-500 self-center">
-                        +{speaker.topics.length - 3} more
+                      <span className="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-500 border border-slate-800 rounded-md">
+                        +{speaker.topics.length - 3}
                       </span>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* View Profile Action */}
-              <Link
-                href={`/speakers/${speaker.id}`}
-                className="w-full text-center bg-slate-800 hover:bg-blue-600 hover:text-white text-slate-200 text-xs font-semibold py-2.5 rounded-xl transition border border-slate-700 hover:border-blue-600"
-              >
-                View Profile & Works →
-              </Link>
-            </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs text-slate-400">
+                <span>📍 {speaker.location || 'Remote'}</span>
+                <span className="text-blue-400 group-hover:translate-x-0.5 transition font-medium">
+                  View Profile →
+                </span>
+              </div>
+            </Link>
           ))}
         </div>
       )}
