@@ -12,7 +12,7 @@ export default function JoinSpeakerPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Speaker profile fields
+  // Profile details
   const [fullName, setFullName] = useState('');
   const [title, setTitle] = useState('');
   const [bio, setBio] = useState('');
@@ -30,55 +30,51 @@ export default function JoinSpeakerPage() {
     setErrorMsg('');
 
     try {
-      // 1. Sign up user with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (authError) throw authError;
-
-      const user = authData.user;
-      if (!user) throw new Error('Registration failed. Please try again.');
-
-      // Parse comma-separated topics
       const topicsArray = topicsInput
         .split(',')
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      // 2. Insert Profile row in Supabase with backward-compatible schema fields
-      const { data: newProfile, error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            user_id: user.id,
-            email: user.email,
+      // Sign up while embedding metadata into the user record
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
             full_name: fullName,
-            name: fullName,
-            title: title,
-            headline: title,
+            title,
             bio,
             location: location || 'Remote',
-            country: location || 'Remote',
-            city: location || 'Remote',
-            state: location || 'Remote',
             pro_bono: proBono,
             topics: topicsArray,
             avatar_url: avatarUrl || null,
           },
-        ])
-        .select()
-        .single();
+        },
+      });
 
-      if (profileError) throw profileError;
+      if (error) throw error;
 
-      // 3. Navigate directly to their newly created speaker dashboard
-      router.push(`/speakers/${newProfile.id}`);
+      // Fetch the auto-created profile id
+      const userId = data.user?.id;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (profile?.id) {
+          router.push(`/speakers/${profile.id}`);
+          router.refresh();
+          return;
+        }
+      }
+
+      router.push('/');
       router.refresh();
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'An error occurred during profile creation.');
+      setErrorMsg(err.message || 'An error occurred during registration.');
     } finally {
       setLoading(false);
     }
@@ -95,7 +91,7 @@ export default function JoinSpeakerPage() {
             Create Your Speaker Profile
           </h1>
           <p className="text-sm text-slate-400 mt-2">
-            Join the open directory to receive session invites from universities, conferences, and event organizers.
+            Join the directory to connect with universities, tech meetups, and conference organizers.
           </p>
         </div>
 
@@ -106,7 +102,6 @@ export default function JoinSpeakerPage() {
         )}
 
         <form onSubmit={handleRegisterAndCreate} className="space-y-5">
-          {/* Account Credentials */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -140,7 +135,6 @@ export default function JoinSpeakerPage() {
 
           <div className="pt-3 border-t border-slate-800"></div>
 
-          {/* Profile Details */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -165,7 +159,7 @@ export default function JoinSpeakerPage() {
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Senior Cloud Architect & Tech Speaker"
+                placeholder="e.g. Cloud Architect & Keynote Speaker"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -180,7 +174,7 @@ export default function JoinSpeakerPage() {
               rows={4}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="Detail your expertise, key industry experience, past talks, and session delivery style..."
+              placeholder="Highlight your key background, topics you present, and past engagements..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -222,7 +216,7 @@ export default function JoinSpeakerPage() {
               required
               value={topicsInput}
               onChange={(e) => setTopicsInput(e.target.value)}
-              placeholder="e.g. AI & ML, Cloud Computing, DevOps, Next.js, Cyber Security"
+              placeholder="e.g. AI & ML, Cloud Computing, DevOps, Next.js"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -236,7 +230,7 @@ export default function JoinSpeakerPage() {
               className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-blue-600 focus:ring-0 cursor-pointer"
             />
             <label htmlFor="proBonoCheck" className="text-xs text-slate-300 cursor-pointer select-none">
-              <span className="font-semibold text-white">Available for Pro-Bono sessions</span> (Open to unpaid college/community talks)
+              <span className="font-semibold text-white">Available for Pro-Bono sessions</span> (Open to unpaid community talks)
             </label>
           </div>
 
@@ -250,7 +244,7 @@ export default function JoinSpeakerPage() {
         </form>
 
         <p className="text-center text-xs text-slate-500 mt-6">
-          Already have a speaker account?{' '}
+          Already have an account?{' '}
           <Link href="/login" className="text-blue-400 hover:underline font-semibold">
             Sign In here
           </Link>
