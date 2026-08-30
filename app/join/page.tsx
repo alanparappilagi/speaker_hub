@@ -1,179 +1,255 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
-export default function JoinPage() {
+export default function JoinSpeakerPage() {
   const router = useRouter();
 
-  const [name, setName] = useState('');
-  const [headline, setHeadline] = useState('');
+  // Auth fields
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Speaker profile fields
+  const [fullName, setFullName] = useState('');
+  const [title, setTitle] = useState('');
   const [bio, setBio] = useState('');
-  const [country, setCountry] = useState('United States');
+  const [location, setLocation] = useState('');
   const [proBono, setProBono] = useState(false);
+  const [topicsInput, setTopicsInput] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
 
   const [loading, setLoading] = useState(false);
-  const [authChecking, setAuthChecking] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Check if the user is logged in on mount
-  useEffect(() => {
-    async function checkAuth() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-      } else {
-        setUser(user);
-      }
-      setAuthChecking(false);
-    }
-    checkAuth();
-  }, [router]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleRegisterAndCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg('');
 
-    // 1. Verify user session
-    const { data: { user } } = await supabase.auth.getUser();
+    try {
+      // 1. Sign up user with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    if (!user) {
-      alert('Please sign in or create an account first to publish a profile.');
-      router.push('/login');
-      return;
-    }
+      if (authError) throw authError;
 
-    // 2. Insert profile linked to this authenticated user
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert([
-        {
-          name,
-          headline,
-          bio,
-          country,
-          pro_bono: proBono,
-          user_id: user.id, // Links ownership to Supabase Auth user
-        },
-      ])
-      .select()
-      .single();
+      const user = authData.user;
+      if (!user) throw new Error('Registration failed. Please try again.');
 
-    if (error) {
-      alert('Error creating profile: ' + error.message);
+      // Parse comma-separated topics
+      const topicsArray = topicsInput
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      // 2. Insert Profile row in Supabase
+      const { data: newProfile, error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            user_id: user.id,
+            email: user.email,
+            full_name: fullName,
+            title,
+            bio,
+            location: location || 'Remote',
+            pro_bono: proBono,
+            topics: topicsArray,
+            avatar_url: avatarUrl || null,
+          },
+        ])
+        .select()
+        .single();
+
+      if (profileError) throw profileError;
+
+      // 3. Navigate directly to their newly created speaker dashboard
+      router.push(`/speakers/${newProfile.id}`);
+      router.refresh();
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'An error occurred during profile creation.');
+    } finally {
       setLoading(false);
-    } else {
-      router.push(`/speakers/${data.id}`);
     }
   };
 
-  if (authChecking) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-400 flex items-center justify-center">
-        Checking authentication...
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 py-12 px-4">
-      <div className="max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-xl">
-        <div className="mb-6">
-          <Link href="/" className="text-xs text-slate-400 hover:text-white transition">
-            ← Back to Directory
-          </Link>
-          <h1 className="text-2xl font-bold mt-2">Create Speaker Profile</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Publish your details so event organizers and communities can reach you.
+    <div className="max-w-2xl mx-auto px-4 py-12">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl">
+        <div className="text-center mb-8">
+          <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+            Speaker Registration
+          </span>
+          <h1 className="text-3xl font-black text-white mt-3 tracking-tight">
+            Create Your Speaker Profile
+          </h1>
+          <p className="text-sm text-slate-400 mt-2">
+            Join the open directory to receive session invites from universities, conferences, and event organizers.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Full Name *
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
-              placeholder="e.g. Sarah Connor"
-            />
+        {errorMsg && (
+          <div className="mb-6 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs font-medium text-center">
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleRegisterAndCreate} className="space-y-5">
+          {/* Account Credentials */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Account Email *
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@domain.com"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Create Password *
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Minimum 6 characters"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-800"></div>
+
+          {/* Profile Details */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. Alan Parappil"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Professional Title / Headline *
+              </label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Senior Cloud Architect & Tech Speaker"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Headline / Role *
-            </label>
-            <input
-              type="text"
-              required
-              value={headline}
-              onChange={(e) => setHeadline(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
-              placeholder="e.g. AI Researcher & Keynote Speaker"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Country *
-            </label>
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
-            >
-              <option value="India">India</option>
-              <option value="United States">United States</option>
-              <option value="United Kingdom">United Kingdom</option>
-              <option value="Canada">Canada</option>
-              <option value="Germany">Germany</option>
-              <option value="Singapore">Singapore</option>
-              <option value="Australia">Australia</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Bio / Topics Covered *
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Speaker Bio / Background *
             </label>
             <textarea
               required
               rows={4}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500"
-              placeholder="Share your speaking experience, primary domains, and preferred conference formats..."
+              placeholder="Detail your expertise, key industry experience, past talks, and session delivery style..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
             />
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Location / City
+              </label>
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g. Kochi, Kerala (or Remote)"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Avatar / Photo URL (Optional)
+              </label>
+              <input
+                type="url"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                placeholder="https://images.unsplash.com/..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Expertise Topics (Comma Separated) *
+            </label>
+            <input
+              type="text"
+              required
+              value={topicsInput}
+              onChange={(e) => setTopicsInput(e.target.value)}
+              placeholder="e.g. AI & ML, Cloud Computing, DevOps, Next.js, Cyber Security"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
             <input
               type="checkbox"
-              id="proBono"
+              id="proBonoCheck"
               checked={proBono}
               onChange={(e) => setProBono(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500"
+              className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-blue-600 focus:ring-0 cursor-pointer"
             />
-            <label htmlFor="proBono" className="text-sm text-slate-300 cursor-pointer">
-              Available for pro-bono / community / college sessions
+            <label htmlFor="proBonoCheck" className="text-xs text-slate-300 cursor-pointer select-none">
+              <span className="font-semibold text-white">Available for Pro-Bono sessions</span> (Open to unpaid college/community talks)
             </label>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 mt-4"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition shadow-lg shadow-blue-600/20"
           >
-            {loading ? 'Creating Profile...' : 'Save & Continue to Portfolio'}
+            {loading ? 'Creating Your Profile...' : 'Complete Profile & Join →'}
           </button>
         </form>
+
+        <p className="text-center text-xs text-slate-500 mt-6">
+          Already have a speaker account?{' '}
+          <Link href="/login" className="text-blue-400 hover:underline font-semibold">
+            Sign In here
+          </Link>
+        </p>
       </div>
     </div>
   );
