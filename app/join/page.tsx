@@ -47,7 +47,7 @@ export default function JoinSpeakerPage() {
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      // 2. Insert Profile row in Supabase
+      // 2. Insert Profile row in Supabase with backward-compatible column mappings
       const { data: newProfile, error: profileError } = await supabase
         .from('profiles')
         .insert([
@@ -55,7 +55,9 @@ export default function JoinSpeakerPage() {
             user_id: user.id,
             email: user.email,
             full_name: fullName,
-            title,
+            name: fullName,
+            title: title,
+            headline: title,
             bio,
             location: location || 'Remote',
             pro_bono: proBono,
