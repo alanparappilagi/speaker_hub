@@ -12,11 +12,13 @@ export default function JoinSpeakerPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Profile details
+  // Speaker profile fields
   const [fullName, setFullName] = useState('');
   const [title, setTitle] = useState('');
   const [bio, setBio] = useState('');
-  const [location, setLocation] = useState('');
+  const [city, setCity] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [country, setCountry] = useState('');
   const [proBono, setProBono] = useState(false);
   const [topicsInput, setTopicsInput] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -35,7 +37,11 @@ export default function JoinSpeakerPage() {
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      // Sign up while embedding metadata into the user record
+      // Build composite location string
+      const locationParts = [city, stateName, country].filter(Boolean);
+      const combinedLocation = locationParts.length > 0 ? locationParts.join(', ') : 'Remote';
+
+      // 1. Register user and attach profile data inside metadata
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -44,7 +50,10 @@ export default function JoinSpeakerPage() {
             full_name: fullName,
             title,
             bio,
-            location: location || 'Remote',
+            city: city || null,
+            state: stateName || null,
+            country: country || 'Remote',
+            location: combinedLocation,
             pro_bono: proBono,
             topics: topicsArray,
             avatar_url: avatarUrl || null,
@@ -54,17 +63,48 @@ export default function JoinSpeakerPage() {
 
       if (error) throw error;
 
-      // Fetch the auto-created profile id
       const userId = data.user?.id;
+
+      // 2. Direct fallback insert to ensure profile creation succeeds
       if (userId) {
-        const { data: profile } = await supabase
+        const { data: newProfile, error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              user_id: userId,
+              email,
+              name: fullName,
+              full_name: fullName,
+              title,
+              headline: title,
+              bio,
+              city: city || null,
+              state: stateName || null,
+              country: country || 'Remote',
+              location: combinedLocation,
+              pro_bono: proBono,
+              topics: topicsArray,
+              avatar_url: avatarUrl || null,
+            },
+          ])
+          .select('id')
+          .maybeSingle();
+
+        if (!profileError && newProfile?.id) {
+          router.push(`/speakers/${newProfile.id}`);
+          router.refresh();
+          return;
+        }
+
+        // If trigger already created the profile, query for its ID
+        const { data: existingProfile } = await supabase
           .from('profiles')
           .select('id')
           .eq('user_id', userId)
           .maybeSingle();
 
-        if (profile?.id) {
-          router.push(`/speakers/${profile.id}`);
+        if (existingProfile?.id) {
+          router.push(`/speakers/${existingProfile.id}`);
           router.refresh();
           return;
         }
@@ -74,7 +114,7 @@ export default function JoinSpeakerPage() {
       router.refresh();
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'An error occurred during registration.');
+      setErrorMsg(err.message || 'An error occurred during profile registration.');
     } finally {
       setLoading(false);
     }
@@ -91,7 +131,7 @@ export default function JoinSpeakerPage() {
             Create Your Speaker Profile
           </h1>
           <p className="text-sm text-slate-400 mt-2">
-            Join the directory to connect with universities, tech meetups, and conference organizers.
+            Join the directory to connect with conferences, colleges, and event organizers.
           </p>
         </div>
 
@@ -102,6 +142,7 @@ export default function JoinSpeakerPage() {
         )}
 
         <form onSubmit={handleRegisterAndCreate} className="space-y-5">
+          {/* Account Credentials */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -135,6 +176,7 @@ export default function JoinSpeakerPage() {
 
           <div className="pt-3 border-t border-slate-800"></div>
 
+          {/* Core Profile Fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -152,7 +194,7 @@ export default function JoinSpeakerPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Professional Title / Headline *
+                Headline / Professional Title *
               </label>
               <input
                 type="text"
@@ -174,39 +216,69 @@ export default function JoinSpeakerPage() {
               rows={4}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="Highlight your key background, topics you present, and past engagements..."
+              placeholder="Highlight your key background, session style, and past engagements..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Granular Location: City, State, Country */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Location / City
+                City
               </label>
               <input
                 type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="e.g. Kochi, Kerala (or Remote)"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="e.g. Kochi"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Avatar / Photo URL (Optional)
+                State / Province
               </label>
               <input
-                type="url"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://images.unsplash.com/..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                type="text"
+                value={stateName}
+                onChange={(e) => setStateName(e.target.value)}
+                placeholder="e.g. Kerala"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Country *
+              </label>
+              <input
+                type="text"
+                required
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                placeholder="e.g. India"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
               />
             </div>
           </div>
 
+          {/* Avatar URL */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Profile Photo URL (Optional)
+            </label>
+            <input
+              type="url"
+              value={avatarUrl}
+              onChange={(e) => setAvatarUrl(e.target.value)}
+              placeholder="https://images.unsplash.com/..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          {/* Topics */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               Expertise Topics (Comma Separated) *
@@ -221,6 +293,7 @@ export default function JoinSpeakerPage() {
             />
           </div>
 
+          {/* Pro Bono Toggle */}
           <div className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
             <input
               type="checkbox"
@@ -230,7 +303,7 @@ export default function JoinSpeakerPage() {
               className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-blue-600 focus:ring-0 cursor-pointer"
             />
             <label htmlFor="proBonoCheck" className="text-xs text-slate-300 cursor-pointer select-none">
-              <span className="font-semibold text-white">Available for Pro-Bono sessions</span> (Open to unpaid community talks)
+              <span className="font-semibold text-white">Available for Pro-Bono sessions</span> (Open to unpaid college/community talks)
             </label>
           </div>
 
