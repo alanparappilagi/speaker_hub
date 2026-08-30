@@ -1,364 +1,319 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useState, useEffect, use } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
-export default function SpeakerDetailPage() {
-  const { id } = useParams();
-  const [speaker, setSpeaker] = useState<any>(null);
-  const [portfolio, setPortfolio] = useState<any[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [inquiriesList, setInquiriesList] = useState<any[]>([]);
+interface SpeakerProfile {
+  id: string;
+  user_id: string;
+  full_name: string;
+  title: string;
+  bio: string;
+  location: string;
+  pro_bono: boolean;
+  topics: string[];
+  avatar_url?: string;
+  email: string;
+}
+
+interface PortfolioItem {
+  id: string;
+  title: string;
+  event_name: string;
+  media_type: 'video' | 'slides' | 'article' | 'photo';
+  media_url: string;
+  description?: string;
+}
+
+interface InquiryItem {
+  id: string;
+  organizer_name: string;
+  organizer_email: string;
+  event_details: string;
+  created_at: string;
+  status: string;
+}
+
+export default function SpeakerDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const resolvedParams = use(params);
+  const speakerId = resolvedParams.id;
+
+  const [speaker, setSpeaker] = useState<SpeakerProfile | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [inquiries, setInquiries] = useState<InquiryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
 
-  // Invite Form State (for Visitors)
-  const [inviteName, setInviteName] = useState('');
-  const [inviteDetails, setInviteDetails] = useState('');
-  const [sendingInvite, setSendingInvite] = useState(false);
-  const [inviteSuccess, setInviteSuccess] = useState(false);
+  // Invite/Inquiry Modal & Form State
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [organizerName, setOrganizerName] = useState('');
+  const [organizerEmail, setOrganizerEmail] = useState('');
+  const [eventDetails, setEventDetails] = useState('');
+  const [submittingInquiry, setSubmittingInquiry] = useState(false);
+  const [inquirySuccess, setInquirySuccess] = useState(false);
 
-  // Add Portfolio Modal State
-  const [showWorkModal, setShowWorkModal] = useState(false);
-  const [workTitle, setWorkTitle] = useState('');
-  const [eventName, setEventName] = useState('');
-  const [mediaType, setMediaType] = useState('Video Recording');
-  const [externalUrl, setExternalUrl] = useState('');
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadingWork, setUploadingWork] = useState(false);
-
-  // Edit Profile Modal State
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editHeadline, setEditHeadline] = useState('');
-  const [editBio, setEditBio] = useState('');
-  const [editCountry, setEditCountry] = useState('');
-  const [editTopics, setEditTopics] = useState('');
-  const [editLinkedin, setEditLinkedin] = useState('');
-  const [editGithub, setEditGithub] = useState('');
-  const [editAvatarUrl, setEditAvatarUrl] = useState('');
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
+  // Portfolio Add Modal State
+  const [showPortfolioModal, setShowPortfolioModal] = useState(false);
+  const [portTitle, setPortTitle] = useState('');
+  const [portEvent, setPortEvent] = useState('');
+  const [portMediaType, setPortMediaType] = useState<'video' | 'slides' | 'article' | 'photo'>('video');
+  const [portUrl, setPortUrl] = useState('');
+  const [portDesc, setPortDesc] = useState('');
+  const [submittingPort, setSubmittingPort] = useState(false);
 
   useEffect(() => {
-    async function loadData() {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
+    async function loadSpeakerData() {
+      setLoading(true);
 
-      // Fetch Speaker Profile
+      // 1. Fetch current profile
       const { data: profileData, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', id)
+        .eq('id', speakerId)
         .single();
 
-      if (!profileErr && profileData) {
+      if (profileData && !profileErr) {
         setSpeaker(profileData);
-        setEditName(profileData.name || '');
-        setEditHeadline(profileData.headline || '');
-        setEditBio(profileData.bio || '');
-        setEditCountry(profileData.country || '');
-        setEditTopics(profileData.topics ? profileData.topics.join(', ') : '');
-        setEditLinkedin(profileData.linkedin_url || '');
-        setEditGithub(profileData.github_url || '');
-        setEditAvatarUrl(profileData.avatar_url || '');
 
-        // Fetch inquiries inbox if owner
+        // 2. Check ownership
+        const { data: { user } } = await supabase.auth.getUser();
         if (user && user.id === profileData.user_id) {
+          setIsOwner(true);
+
+          // 3. Fetch Inquiries for owner
           const { data: inqData } = await supabase
             .from('inquiries')
             .select('*')
-            .eq('speaker_id', profileData.id)
+            .eq('speaker_id', speakerId)
             .order('created_at', { ascending: false });
 
           if (inqData) {
-            setInquiriesList(inqData);
+            setInquiries(
+              inqData.map((item) => ({
+                ...item,
+                status: item.status || 'pending',
+              }))
+            );
           }
         }
       }
 
-      // Fetch Portfolio Items
-      const { data: worksData } = await supabase
+      // 4. Fetch Portfolio Items
+      const { data: portData } = await supabase
         .from('portfolio_items')
         .select('*')
-        .eq('speaker_id', id)
+        .eq('speaker_id', speakerId)
         .order('created_at', { ascending: false });
 
-      if (worksData) {
-        setPortfolio(worksData);
-      }
+      if (portData) setPortfolio(portData);
 
       setLoading(false);
     }
 
-    if (id) loadData();
-  }, [id]);
+    loadSpeakerData();
+  }, [speakerId]);
 
-  const isOwner = currentUser && speaker && currentUser.id === speaker.user_id;
-
-  // 1. Update Inquiry Status (Accept / Decline)
+  // Handle Accept / Decline status updates
   const handleUpdateInquiryStatus = async (inquiryId: string, newStatus: string) => {
+    // Optimistic UI update
+    setInquiries((prev) =>
+      prev.map((inq) => (inq.id === inquiryId ? { ...inq, status: newStatus } : inq))
+    );
+
     const { error } = await supabase
       .from('inquiries')
       .update({ status: newStatus })
       .eq('id', inquiryId);
 
-    if (!error) {
-      setInquiriesList((prev) =>
-        prev.map((item) => (item.id === inquiryId ? { ...item, status: newStatus } : item))
-      );
+    if (error) {
+      console.error('Failed to update status:', error);
+      alert('Could not update status: ' + error.message);
     }
   };
 
-  // 2. Send Inquiry via Resend API (Visitor Handler)
-  const handleSendInquiry = async (e: React.FormEvent) => {
+  // Handle sending new speaking invitation
+  const handleSubmitInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) return;
-    setSendingInvite(true);
-
-    const senderEmail = currentUser.email;
-
-    await supabase.from('inquiries').insert([
-      {
-        speaker_id: speaker.id,
-        organizer_name: inviteName,
-        organizer_email: senderEmail,
-        session_details: inviteDetails,
-        status: 'pending',
-      },
-    ]);
+    setSubmittingInquiry(true);
 
     try {
-      const res = await fetch('/api/send-inquiry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          speakerName: speaker.name,
-          speakerEmail: speaker.contact_email,
-          organizerName: inviteName,
-          organizerEmail: senderEmail,
-          sessionDetails: inviteDetails,
-        }),
-      });
+      // 1. Insert into Supabase
+      const { error: dbError } = await supabase.from('inquiries').insert([
+        {
+          speaker_id: speakerId,
+          organizer_name: organizerName,
+          organizer_email: organizerEmail,
+          event_details: eventDetails,
+          status: 'pending',
+        },
+      ]);
 
-      if (!res.ok) {
-        console.warn('Backend email notification failed, but inquiry was saved to database.');
+      if (dbError) throw dbError;
+
+      // 2. Send email notification via Resend API Route
+      if (speaker?.email) {
+        await fetch('/api/send-inquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            speakerName: speaker.full_name,
+            speakerEmail: speaker.email,
+            organizerName,
+            organizerEmail,
+            sessionDetails: eventDetails,
+          }),
+        });
       }
-    } catch (err) {
-      console.error('Email sending error:', err);
-    }
 
-    setSendingInvite(false);
-    setInviteSuccess(true);
-    setInviteName('');
-    setInviteDetails('');
+      setInquirySuccess(true);
+      setTimeout(() => {
+        setShowInviteModal(false);
+        setInquirySuccess(false);
+        setOrganizerName('');
+        setOrganizerEmail('');
+        setEventDetails('');
+      }, 2000);
+    } catch (err: any) {
+      alert('Failed to send invitation: ' + err.message);
+    } finally {
+      setSubmittingInquiry(false);
+    }
   };
 
-  // 3. Avatar Photo Upload Handler
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    setUploadingAvatar(true);
-
-    const fileExt = file.name.split('.').pop();
-    const filePath = `avatars/${speaker.id}-${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('portfolio-files')
-      .upload(filePath, file, { upsert: true });
-
-    if (!uploadError) {
-      const { data } = supabase.storage.from('portfolio-files').getPublicUrl(filePath);
-      setEditAvatarUrl(data.publicUrl);
-    }
-    setUploadingAvatar(false);
-  };
-
-  // 4. Save Edited Profile Details
-  const handleSaveProfile = async (e: React.FormEvent) => {
+  // Handle adding new portfolio item
+  const handleAddPortfolio = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingProfile(true);
-
-    const topicsArray = editTopics
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        name: editName,
-        headline: editHeadline,
-        bio: editBio,
-        country: editCountry,
-        topics: topicsArray,
-        linkedin_url: editLinkedin,
-        github_url: editGithub,
-        avatar_url: editAvatarUrl,
-      })
-      .eq('id', speaker.id)
-      .select()
-      .single();
-
-    if (!error && data) {
-      setSpeaker(data);
-      setShowEditModal(false);
-    }
-    setSavingProfile(false);
-  };
-
-  // 5. Upload New Portfolio Item
-  const handleUploadWork = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUploadingWork(true);
-
-    let finalUrl = externalUrl;
-
-    if (uploadFile) {
-      const fileExt = uploadFile.name.split('.').pop();
-      const filePath = `work-decks/${speaker.id}-${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('portfolio-files')
-        .upload(filePath, uploadFile);
-
-      if (!uploadError) {
-        const { data } = supabase.storage.from('portfolio-files').getPublicUrl(filePath);
-        finalUrl = data.publicUrl;
-      }
-    }
+    setSubmittingPort(true);
 
     const { data, error } = await supabase
       .from('portfolio_items')
       .insert([
         {
-          speaker_id: speaker.id,
-          title: workTitle,
-          event_name: eventName,
-          media_type: mediaType,
-          media_url: finalUrl,
+          speaker_id: speakerId,
+          title: portTitle,
+          event_name: portEvent,
+          media_type: portMediaType,
+          media_url: portUrl,
+          description: portDesc,
         },
       ])
       .select()
       .single();
 
     if (!error && data) {
-      setPortfolio([data, ...portfolio]);
-      setShowWorkModal(false);
-      setWorkTitle('');
-      setEventName('');
-      setExternalUrl('');
-      setUploadFile(null);
+      setPortfolio((prev) => [data, ...prev]);
+      setShowPortfolioModal(false);
+      setPortTitle('');
+      setPortEvent('');
+      setPortUrl('');
+      setPortDesc('');
+    } else {
+      alert('Failed to add portfolio item: ' + error?.message);
     }
-    setUploadingWork(false);
+    setSubmittingPort(false);
   };
 
-  // 6. Delete Portfolio Item
-  const handleDeleteWork = async (workId: string) => {
-    if (!confirm('Are you sure you want to remove this portfolio entry?')) return;
-    const { error } = await supabase.from('portfolio_items').delete().eq('id', workId);
-    if (!error) {
-      setPortfolio(portfolio.filter((item) => item.id !== workId));
-    }
+  // Handle deleting portfolio item
+  const handleDeletePortfolio = async (itemId: string) => {
+    if (!confirm('Are you sure you want to delete this session?')) return;
+
+    setPortfolio((prev) => prev.filter((p) => p.id !== itemId));
+    await supabase.from('portfolio_items').delete().eq('id', itemId);
   };
 
   if (loading) {
-    return <div className="text-center py-20 text-slate-400">Loading speaker details...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-[70vh]">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
   }
 
   if (!speaker) {
     return (
-      <div className="text-center py-20 text-slate-400">
-        Speaker not found.{' '}
-        <Link href="/" className="text-blue-400 underline">
-          Back to directory
+      <div className="max-w-4xl mx-auto my-16 text-center">
+        <h2 className="text-2xl font-bold text-white mb-2">Speaker Not Found</h2>
+        <p className="text-slate-400 mb-6 text-sm">The speaker profile you are looking for does not exist.</p>
+        <Link href="/" className="text-blue-400 hover:underline text-sm font-medium">
+          ← Back to Speaker Directory
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Header Profile Card */}
-      <div className="bg-white text-slate-900 rounded-2xl p-6 sm:p-8 shadow-xl mb-8 border border-slate-100">
-        <div className="flex flex-col sm:flex-row items-start gap-6 justify-between">
-          <div className="flex items-start gap-5">
+    <div className="max-w-5xl mx-auto px-4 py-10">
+      {/* Back Link */}
+      <Link href="/" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white mb-8 transition">
+        ← Back to Directory
+      </Link>
+
+      {/* Main Profile Header Card */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 mb-10 shadow-xl">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
             {speaker.avatar_url ? (
               <img
                 src={speaker.avatar_url}
-                alt={speaker.name}
-                className="w-20 h-20 rounded-full object-cover border-2 border-slate-200"
+                alt={speaker.full_name}
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-blue-500/30"
               />
             ) : (
-              <div className="w-20 h-20 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-2xl border border-slate-300">
-                {speaker.name?.slice(0, 2).toUpperCase()}
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-blue-600/20 border-2 border-blue-500/30 flex items-center justify-center text-blue-400 font-black text-3xl">
+                {speaker.full_name.charAt(0)}
               </div>
             )}
-
             <div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{speaker.name}</h1>
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  {speaker.full_name}
+                </h1>
                 {speaker.pro_bono && (
-                  <span className="bg-emerald-50 text-emerald-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    Pro-Bono Available
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
+                    Pro-Bono
                   </span>
                 )}
               </div>
-              <p className="text-slate-600 font-medium mt-1">{speaker.headline}</p>
-              {speaker.country && (
-                <p className="text-slate-400 text-xs mt-1">📍 {speaker.country}</p>
-              )}
+              <p className="text-sm font-medium text-slate-300 mb-1">{speaker.title}</p>
+              <p className="text-xs text-slate-500 flex items-center gap-1">
+                📍 {speaker.location || 'Remote / Worldwide'}
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {speaker.linkedin_url && (
-              <a
-                href={speaker.linkedin_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs px-3 py-1.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-              >
-                LinkedIn ↗
-              </a>
-            )}
-            {speaker.github_url && (
-              <a
-                href={speaker.github_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs px-3 py-1.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-              >
-                Website / GitHub ↗
-              </a>
-            )}
-            {isOwner && (
-              <button
-                onClick={() => setShowEditModal(true)}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3.5 py-1.5 rounded-lg transition font-medium"
-              >
-                ✎ Edit Profile
-              </button>
-            )}
-          </div>
+          {!isOwner && (
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition shadow-lg shadow-blue-600/20"
+            >
+              ✉ Invite / Inquire Speaker
+            </button>
+          )}
         </div>
 
-        {/* Bio */}
-        {speaker.bio && (
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <h4 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">About the Speaker</h4>
-            <p className="text-slate-700 text-sm whitespace-pre-line leading-relaxed">{speaker.bio}</p>
-          </div>
-        )}
+        {/* Bio Section */}
+        <div className="mt-8 pt-6 border-t border-slate-800">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">About</h2>
+          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">{speaker.bio}</p>
+        </div>
 
-        {/* Expertise Topics / Class Domains */}
+        {/* Expertise Topics */}
         {speaker.topics && speaker.topics.length > 0 && (
-          <div className="mt-5 pt-4 border-t border-slate-100">
-            <h4 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Expertise Topics & Class Domains</h4>
+          <div className="mt-6 pt-6 border-t border-slate-800">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+              Expertise Topics & Class Domains
+            </h2>
             <div className="flex flex-wrap gap-2">
-              {speaker.topics.map((t: string, idx: number) => (
-                <span key={idx} className="bg-blue-50 text-blue-700 text-xs px-3 py-1 rounded-md font-medium border border-blue-100">
+              {speaker.topics.map((t, idx) => (
+                <span
+                  key={idx}
+                  className="text-xs px-3 py-1 bg-slate-950 text-slate-300 border border-slate-800 rounded-lg font-medium"
+                >
                   {t}
                 </span>
               ))}
@@ -367,17 +322,16 @@ export default function SpeakerDetailPage() {
         )}
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column: Previous Works & Sessions */}
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-white">Previous Works & Sessions</h2>
+      {/* Grid: Previous Sessions / Portfolio & Inquiries Box */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Left Column: Portfolio Sessions (2 cols) */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white tracking-tight">Previous Works & Sessions</h2>
             {isOwner && (
               <button
-                onClick={() => setShowWorkModal(true)}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+                onClick={() => setShowPortfolioModal(true)}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition shadow-sm"
               >
                 + Add Session / Work
               </button>
@@ -385,44 +339,43 @@ export default function SpeakerDetailPage() {
           </div>
 
           {portfolio.length === 0 ? (
-            <div className="bg-slate-900 border border-dashed border-slate-800 rounded-2xl p-10 text-center text-slate-500 text-sm">
-              No previous presentations or slide decks uploaded yet.
+            <div className="p-8 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 text-xs">
+              No previous speaking sessions or recordings listed yet.
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
               {portfolio.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-start justify-between gap-4 hover:border-slate-700 transition"
+                  className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition relative group"
                 >
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                        {item.media_type || 'Session'}
-                      </span>
-                      <span className="text-xs text-slate-400">• {item.event_name}</span>
-                    </div>
-                    <h3 className="font-semibold text-white text-base">{item.title}</h3>
-                    {item.media_url && (
-                      <a
-                        href={item.media_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline mt-2"
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      {item.media_type} {item.event_name ? `• ${item.event_name}` : ''}
+                    </span>
+                    {isOwner && (
+                      <button
+                        onClick={() => handleDeletePortfolio(item.id)}
+                        className="text-slate-500 hover:text-rose-400 text-xs transition"
+                        title="Delete session"
                       >
-                        View Presentation / Recording ↗
-                      </a>
+                        ✕
+                      </button>
                     )}
                   </div>
-
-                  {isOwner && (
-                    <button
-                      onClick={() => handleDeleteWork(item.id)}
-                      className="text-slate-500 hover:text-red-400 text-xs px-2 py-1 rounded transition"
-                      title="Delete entry"
+                  <h3 className="font-bold text-white text-sm mb-1">{item.title}</h3>
+                  {item.description && (
+                    <p className="text-xs text-slate-400 mb-3 line-clamp-2">{item.description}</p>
+                  )}
+                  {item.media_url && (
+                    <a
+                      href={item.media_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline font-medium"
                     >
-                      ✕
-                    </button>
+                      View Presentation / Recording ↗
+                    </a>
                   )}
                 </div>
               ))}
@@ -430,362 +383,240 @@ export default function SpeakerDetailPage() {
           )}
         </div>
 
-        {/* Right Column: Inquiries Inbox with Status Actions (Owner) OR Contact Form (Visitor) */}
-        <div className="bg-white text-slate-900 rounded-2xl p-6 border border-slate-200 h-fit shadow-lg">
-          {isOwner ? (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-bold text-slate-900">Received Inquiries</h3>
-                <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2.5 py-0.5 rounded-full">
-                  {inquiriesList.length}
-                </span>
+        {/* Right Column: Inquiries Inbox (Owner only) */}
+        {isOwner && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white tracking-tight">Received Inquiries</h2>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                {inquiries.length}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">Direct invitation requests submitted by event organizers.</p>
+
+            {inquiries.length === 0 ? (
+              <div className="p-6 border border-dashed border-slate-800 rounded-xl text-center text-xs text-slate-500">
+                No inquiries received yet.
               </div>
-              <p className="text-xs text-slate-500 mb-4">Direct invitation requests submitted by event organizers.</p>
-
-              {inquiriesList.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
-                  No inquiries received yet.
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                  {inquiriesList.map((inq) => {
-                    const status = inq.status || 'pending';
-                    return (
-                      <div key={inq.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900 text-sm">{inq.organizer_name}</span>
-                          <span
-                            className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
-                              status === 'accepted'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                : status === 'declined'
-                                ? 'bg-red-100 text-red-800 border-red-200'
-                                : 'bg-amber-100 text-amber-800 border-amber-200'
-                            }`}
-                          >
-                            {status}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+            ) : (
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                {inquiries.map((inq) => {
+                  const status = (inq.status || 'pending').toLowerCase();
+                  return (
+                    <div
+                      key={inq.id}
+                      className="bg-slate-950 border border-slate-800/80 rounded-xl p-4 space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-white">{inq.organizer_name}</p>
                           <a
-                            href={`mailto:${inq.organizer_email}?subject=Re:%20Session%20Invitation`}
-                            className="text-blue-600 hover:underline font-medium"
+                            href={`mailto:${inq.organizer_email}`}
+                            className="text-[11px] text-blue-400 hover:underline block"
                           >
                             ✉ {inq.organizer_email}
                           </a>
-                          <span>{new Date(inq.created_at).toLocaleDateString()}</span>
                         </div>
+                        <span
+                          className={`text-[9px] font-black tracking-wider uppercase px-2 py-0.5 rounded-md border ${
+                            status === 'accepted'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : status === 'declined'
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          }`}
+                        >
+                          {status}
+                        </span>
+                      </div>
 
-                        <p className="text-slate-700 text-xs pt-1.5 border-t border-slate-200 whitespace-pre-line leading-relaxed">
-                          {inq.session_details}
-                        </p>
+                      <p className="text-xs text-slate-300 bg-slate-900/50 p-2.5 rounded-lg border border-slate-900 whitespace-pre-line">
+                        {inq.event_details}
+                      </p>
 
-                        {/* Status Change Action Buttons */}
-                        <div className="pt-2 border-t border-slate-200 flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(inq.created_at).toLocaleDateString()}
+                        </span>
+                        <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => handleUpdateInquiryStatus(inq.id, 'accepted')}
-                            disabled={status === 'accepted'}
-                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${
-                              status === 'accepted'
-                                ? 'bg-emerald-600 text-white cursor-default'
-                                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                            }`}
+                            className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[11px] font-semibold transition"
                           >
                             ✓ Accept
                           </button>
                           <button
                             onClick={() => handleUpdateInquiryStatus(inq.id, 'declined')}
-                            disabled={status === 'declined'}
-                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${
-                              status === 'declined'
-                                ? 'bg-red-600 text-white cursor-default'
-                                : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
-                            }`}
+                            className="px-2.5 py-1 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-lg text-[11px] font-semibold transition"
                           >
                             ✕ Decline
                           </button>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Invite for a Session</h3>
-              <p className="text-xs text-slate-500 mb-4">Send a direct proposal or inquiry to {speaker.name}.</p>
-
-              {!currentUser ? (
-                <div className="text-center py-6 border border-dashed border-slate-300 rounded-xl p-4 bg-slate-50">
-                  <p className="text-xs text-slate-600 mb-3 font-medium">
-                    Please sign in to send an inquiry with a verified organizer email.
-                  </p>
-                  <Link
-                    href="/login"
-                    className="inline-block bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition"
-                  >
-                    Sign In to Continue
-                  </Link>
-                </div>
-              ) : inviteSuccess ? (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl text-xs space-y-2">
-                  <p className="font-semibold">Inquiry sent successfully!</p>
-                  <p>Your message has been delivered directly to {speaker.name}.</p>
-                  <button
-                    onClick={() => setInviteSuccess(false)}
-                    className="text-emerald-700 underline font-medium block mt-2"
-                  >
-                    Send another message
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleSendInquiry} className="space-y-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Your Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={inviteName}
-                      onChange={(e) => setInviteName(e.target.value)}
-                      placeholder="e.g. Sarah Jenkins (TEDx Organizer)"
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Verified Sender Email</label>
-                    <input
-                      type="email"
-                      disabled
-                      value={currentUser.email}
-                      className="w-full border border-slate-200 bg-slate-100 rounded-lg px-3 py-2 text-sm text-slate-500 cursor-not-allowed outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Session Details & Date</label>
-                    <textarea
-                      rows={4}
-                      required
-                      placeholder="Describe topic, event date, audience, and format (virtual/in-person)..."
-                      value={inviteDetails}
-                      onChange={(e) => setInviteDetails(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={sendingInvite}
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg text-sm transition shadow-sm"
-                  >
-                    {sendingInvite ? 'Sending...' : '✈ Send Invitation'}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-        </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Modal 1: Edit Profile */}
-      {showEditModal && (
+      {/* Invite Modal */}
+      {showInviteModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">Edit Speaker Profile</h2>
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Profile Photo</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-500"
-                />
-                {uploadingAvatar && <p className="text-[11px] text-blue-400 mt-1">Uploading picture...</p>}
-                {editAvatarUrl && (
-                  <img src={editAvatarUrl} alt="Preview" className="w-14 h-14 rounded-full mt-2 object-cover border border-slate-700" />
-                )}
-              </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowInviteModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white text-sm"
+            >
+              ✕
+            </button>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
+            <h2 className="text-lg font-bold text-white mb-1">Invite {speaker.full_name}</h2>
+            <p className="text-xs text-slate-400 mb-5">
+              Submit your event proposal. The speaker will be notified via email and on their dashboard.
+            </p>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Headline / Role</label>
-                <input
-                  type="text"
-                  required
-                  value={editHeadline}
-                  onChange={(e) => setEditHeadline(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                />
+            {inquirySuccess ? (
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs text-center font-medium">
+                ✓ Invitation sent successfully!
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Expertise Topics & Class Domains (comma separated)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. AI & ML, Cloud Architecture, Leadership, Python"
-                  value={editTopics}
-                  onChange={(e) => setEditTopics(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Country</label>
-                <input
-                  type="text"
-                  value={editCountry}
-                  onChange={(e) => setEditCountry(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Bio / About</label>
-                <textarea
-                  rows={4}
-                  value={editBio}
-                  onChange={(e) => setEditBio(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            ) : (
+              <form onSubmit={handleSubmitInquiry} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">LinkedIn URL</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name / Organization</label>
                   <input
-                    type="url"
-                    value={editLinkedin}
-                    onChange={(e) => setEditLinkedin(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+                    type="text"
+                    required
+                    value={organizerName}
+                    onChange={(e) => setOrganizerName(e.target.value)}
+                    placeholder="e.g. IEEE Student Branch"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">GitHub / Website</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Your Contact Email</label>
                   <input
-                    type="url"
-                    value={editGithub}
-                    onChange={(e) => setEditGithub(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+                    type="email"
+                    required
+                    value={organizerEmail}
+                    onChange={(e) => setOrganizerEmail(e.target.value)}
+                    placeholder="organizer@domain.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Session Proposal / Event Details</label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={eventDetails}
+                    onChange={(e) => setEventDetails(e.target.value)}
+                    placeholder="Event date, expected audience size, proposed topic, honorarium/budget details..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
                 <button
                   type="submit"
-                  disabled={savingProfile || uploadingAvatar}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg text-sm"
+                  disabled={submittingInquiry}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition"
                 >
-                  {savingProfile ? 'Saving...' : 'Save Changes'}
+                  {submittingInquiry ? 'Sending...' : 'Submit Speaking Invitation'}
                 </button>
-              </div>
-            </form>
+              </form>
+            )}
           </div>
         </div>
       )}
 
-      {/* Modal 2: Add Session / Work */}
-      {showWorkModal && (
+      {/* Add Portfolio Item Modal */}
+      {showPortfolioModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl max-w-lg w-full p-6">
-            <h2 className="text-xl font-bold mb-4">Add Session or Portfolio Work</h2>
-            <form onSubmit={handleUploadWork} className="space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowPortfolioModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white text-sm"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-lg font-bold text-white mb-1">Add Previous Work / Session</h2>
+            <p className="text-xs text-slate-400 mb-5">
+              Highlight keynotes, technical workshops, or panel sessions you have delivered.
+            </p>
+
+            <form onSubmit={handleAddPortfolio} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Talk / Session Title *</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Session / Talk Title</label>
                 <input
                   type="text"
                   required
-                  value={workTitle}
-                  onChange={(e) => setWorkTitle(e.target.value)}
-                  placeholder="e.g. Scaling Web Architecture with Next.js"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+                  value={portTitle}
+                  onChange={(e) => setPortTitle(e.target.value)}
+                  placeholder="e.g. Scaling Next.js on Kubernetes"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Event / Conference / College Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={eventName}
-                  onChange={(e) => setEventName(e.target.value)}
-                  placeholder="e.g. PyCon 2026 / IEEE Summit"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Event / Organization</label>
+                  <input
+                    type="text"
+                    value={portEvent}
+                    onChange={(e) => setPortEvent(e.target.value)}
+                    placeholder="e.g. AGM 2026"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Media Type</label>
+                  <select
+                    value={portMediaType}
+                    onChange={(e) => setPortMediaType(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="video">Video Recording</option>
+                    <option value="slides">Slides / Deck</option>
+                    <option value="article">Article / Report</option>
+                    <option value="photo">Photo / Certificate</option>
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Work / Media Type</label>
-                <select
-                  value={mediaType}
-                  onChange={(e) => setMediaType(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                >
-                  <option value="Video Recording">Video Recording</option>
-                  <option value="Slide Deck">Slide Deck (PDF/Slides)</option>
-                  <option value="Keynote Presentation">Keynote Presentation</option>
-                  <option value="Workshop / Masterclass">Workshop / Masterclass</option>
-                  <option value="Certification / Award">Certification / Award</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">External Link (YouTube, Drive, Slideshare)</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Media / Presentation Link (URL)</label>
                 <input
                   type="url"
-                  value={externalUrl}
-                  onChange={(e) => setExternalUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+                  value={portUrl}
+                  onChange={(e) => setPortUrl(e.target.value)}
+                  placeholder="https://youtube.com/... or https://slideshare.net/..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Or Upload PDF / Deck File directly</label>
-                <input
-                  type="file"
-                  onChange={(e) => setUploadFile(e.target.files ? e.target.files[0] : null)}
-                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-500"
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Description (Optional)</label>
+                <textarea
+                  rows={3}
+                  value={portDesc}
+                  onChange={(e) => setPortDesc(e.target.value)}
+                  placeholder="Key takeaways or summary of the talk..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowWorkModal(false)}
-                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploadingWork}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg text-sm"
-                >
-                  {uploadingWork ? 'Publishing...' : 'Publish Item'}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={submittingPort}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition"
+              >
+                {submittingPort ? 'Saving...' : 'Save Session to Profile'}
+              </button>
             </form>
           </div>
         </div>
