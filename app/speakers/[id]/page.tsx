@@ -70,7 +70,7 @@ export default function SpeakerDetailPage({
     async function loadSpeakerData() {
       setLoading(true);
 
-      // 1. Fetch current profile
+      // 1. Fetch profile details
       const { data: profileData, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
@@ -80,7 +80,7 @@ export default function SpeakerDetailPage({
       if (profileData && !profileErr) {
         setSpeaker(profileData);
 
-        // 2. Check ownership
+        // 2. Check profile ownership
         const { data: { user } } = await supabase.auth.getUser();
         if (user && user.id === profileData.user_id) {
           setIsOwner(true);
@@ -118,13 +118,16 @@ export default function SpeakerDetailPage({
     loadSpeakerData();
   }, [speakerId]);
 
-  // Handle Accept / Decline status updates
+  // Handle Accept / Decline status updates + Automated Email Dispatch
   const handleUpdateInquiryStatus = async (inquiryId: string, newStatus: string) => {
-    // Optimistic UI update
+    const targetInquiry = inquiries.find((inq) => inq.id === inquiryId);
+
+    // 1. Optimistic UI update
     setInquiries((prev) =>
       prev.map((inq) => (inq.id === inquiryId ? { ...inq, status: newStatus } : inq))
     );
 
+    // 2. Persist update in Supabase
     const { error } = await supabase
       .from('inquiries')
       .update({ status: newStatus })
@@ -133,16 +136,37 @@ export default function SpeakerDetailPage({
     if (error) {
       console.error('Failed to update status:', error);
       alert('Could not update status: ' + error.message);
+      return;
+    }
+
+    // 3. Trigger email notification to the organizer via Resend
+    if (targetInquiry && speaker) {
+      try {
+        await fetch('/api/notify-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            speakerName: speaker.full_name,
+            speakerEmail: speaker.email,
+            organizerName: targetInquiry.organizer_name,
+            organizerEmail: targetInquiry.organizer_email,
+            eventDetails: targetInquiry.event_details,
+            status: newStatus,
+          }),
+        });
+      } catch (err) {
+        console.error('Failed to trigger organizer notification email:', err);
+      }
     }
   };
 
-  // Handle sending new speaking invitation
+  // Handle sending a speaking invitation
   const handleSubmitInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmittingInquiry(true);
 
     try {
-      // 1. Insert into Supabase
+      // 1. Insert inquiry into Supabase
       const { error: dbError } = await supabase.from('inquiries').insert([
         {
           speaker_id: speakerId,
@@ -155,7 +179,7 @@ export default function SpeakerDetailPage({
 
       if (dbError) throw dbError;
 
-      // 2. Send email notification via Resend API Route
+      // 2. Send initial email notification via Resend API route
       if (speaker?.email) {
         await fetch('/api/send-inquiry', {
           method: 'POST',
@@ -185,7 +209,7 @@ export default function SpeakerDetailPage({
     }
   };
 
-  // Handle adding new portfolio item
+  // Handle adding new portfolio session
   const handleAddPortfolio = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmittingPort(true);
@@ -249,7 +273,10 @@ export default function SpeakerDetailPage({
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
       {/* Back Link */}
-      <Link href="/" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white mb-8 transition">
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white mb-8 transition"
+      >
         ← Back to Directory
       </Link>
 
@@ -485,7 +512,9 @@ export default function SpeakerDetailPage({
             ) : (
               <form onSubmit={handleSubmitInquiry} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name / Organization</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Your Name / Organization
+                  </label>
                   <input
                     type="text"
                     required
@@ -509,7 +538,9 @@ export default function SpeakerDetailPage({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Session Proposal / Event Details</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Session Proposal / Event Details
+                  </label>
                   <textarea
                     required
                     rows={4}
@@ -589,7 +620,9 @@ export default function SpeakerDetailPage({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Media / Presentation Link (URL)</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Media / Presentation Link (URL)
+                </label>
                 <input
                   type="url"
                   value={portUrl}
