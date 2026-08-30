@@ -1,46 +1,39 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-// Initialized with your Resend API Key from environment variables
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req: Request) {
   try {
-    const { speakerName, speakerEmail, organizerName, organizerEmail, sessionDetails } = await req.json();
-
-    if (!speakerEmail) {
-      return NextResponse.json({ error: 'Speaker email not configured' }, { status: 400 });
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      return NextResponse.json({ error: 'Missing Resend API Key' }, { status: 500 });
     }
 
-    const { data, error } = await resend.emails.send({
-      from: 'SpeakerHub <onboarding@resend.dev>', // Default testing domain
-      to: [speakerEmail],
+    const resend = new Resend(resendApiKey);
+    const { speakerName, speakerEmail, organizerName, organizerEmail, sessionDetails } = await req.json();
+
+    const data = await resend.emails.send({
+      from: 'SpeakUp <onboarding@resend.dev>',
+      to: speakerEmail,
       replyTo: organizerEmail,
-      subject: `New Session Invitation from ${organizerName} via SpeakerHub`,
+      subject: `New Session Invitation on SpeakUp from ${organizerName}`,
       html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; rounded: 10px;">
-          <h2 style="color: #2563eb;">New Speaking Invitation!</h2>
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #2563eb;">New Speaking Invitation Received</h2>
           <p>Hi <strong>${speakerName}</strong>,</p>
-          <p>You have received a new speaking request through SpeakerHub.</p>
-          <hr style="border: none; border-top: 1px solid #eaeaea; margin: 20px 0;" />
-          <p><strong>Organizer Name:</strong> ${organizerName}</p>
-          <p><strong>Organizer Email:</strong> <a href="mailto:${organizerEmail}">${organizerEmail}</a></p>
-          <p><strong>Session Proposal & Details:</strong></p>
-          <blockquote style="background: #f8fafc; padding: 12px; border-left: 4px solid #2563eb; margin: 10px 0;">
-            ${sessionDetails.replace(/\n/g, '<br/>')}
-          </blockquote>
-          <hr style="border: none; border-top: 1px solid #eaeaea; margin: 20px 0;" />
-          <p style="font-size: 12px; color: #64748b;">You can reply directly to this email to get in touch with ${organizerName}.</p>
+          <p>You have received a direct speaking invitation via <strong>SpeakUp</strong>.</p>
+          <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0; border: 1px solid #e2e8f0;">
+            <p style="margin: 0 0 8px 0;"><strong>Organizer Name:</strong> ${organizerName}</p>
+            <p style="margin: 0 0 8px 0;"><strong>Organizer Email:</strong> <a href="mailto:${organizerEmail}">${organizerEmail}</a></p>
+            <p style="margin: 0 0 4px 0;"><strong>Details & Proposal:</strong></p>
+            <p style="white-space: pre-line; margin: 0;">${sessionDetails}</p>
+          </div>
+          <p style="font-size: 12px; color: #64748b;">You can reply directly to this email to get in touch with the organizer.</p>
         </div>
       `,
     });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
     return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
